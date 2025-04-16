@@ -74,13 +74,15 @@ class BaselineModels:
             elapsed = time.time() - start_time
             print(f"训练 {name} 完成，耗时: {elapsed:.2f}秒")
     
-    def evaluate(self, X_test, y_test):
+    def evaluate(self, X_test, y_test, feature_names=None, output_dir=None):
         """
         评估所有训练好的模型
         
         参数:
             X_test: 测试特征
             y_test: 测试标签
+            feature_names: 特征名称列表，用于特征重要性分析
+            output_dir: 输出目录，用于保存特征重要性图
         
         返回:
             dict: 包含各模型评估结果的字典
@@ -91,6 +93,10 @@ class BaselineModels:
         
         print("\n基线模型评估结果:")
         results = {}
+        
+        # 如果没有提供特征名称，尝试从X_test获取
+        if feature_names is None and hasattr(X_test, 'columns'):
+            feature_names = X_test.columns.tolist()
         
         for name, model in self.trained_models.items():
             # 预测概率
@@ -118,6 +124,29 @@ class BaselineModels:
             print(f"  F1 Score: {f1:.4f}")
             print(f"  Precision: {precision:.4f}")
             print(f"  Recall: {recall:.4f}")
+            
+            # 计算并可视化特征重要性（如果提供了输出目录）
+            if output_dir and feature_names:
+                try:
+                    from src.model_evaluator import plot_feature_importance
+                    
+                    # 创建模型特定的目录
+                    model_dir = os.path.join(output_dir, name)
+                    os.makedirs(model_dir, exist_ok=True)
+                    
+                    # 计算特征重要性
+                    importance_path = os.path.join(model_dir, f"{name}_feature_importance.png")
+                    feature_importance = plot_feature_importance(
+                        model, feature_names, output_path=importance_path
+                    )
+                    
+                    # 保存特征重要性CSV
+                    if feature_importance is not None:
+                        importance_csv = os.path.join(model_dir, f"{name}_feature_importance.csv")
+                        feature_importance.to_csv(importance_csv, index=False)
+                        print(f"特征重要性已保存至 {importance_csv}")
+                except Exception as e:
+                    print(f"计算特征重要性时出错: {str(e)}")
             
             # 更新最佳模型 (根据AUROC)
             if auc > self.best_score:

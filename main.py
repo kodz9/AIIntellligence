@@ -60,7 +60,7 @@ class Config:
     TRAIN_BASELINE = True
     
     # 是否训练深度学习模型
-    TRAIN_DL = False  # 关闭深度学习模型
+    TRAIN_DL = True  # 关闭深度学习模型
 
 
 def setup_environment():
@@ -101,8 +101,19 @@ def run_baseline_models(X_train, X_test, y_train, y_test, preprocessor):
     # 训练模型
     baseline.train(X_train, y_train, preprocessor)
     
-    # 评估模型
-    results = baseline.evaluate(X_test, y_test)
+    # 获取原始特征名称（用于特征重要性分析）
+    if hasattr(X_train, 'columns'):
+        feature_names = X_train.columns.tolist()
+    else:
+        feature_names = None
+        print("警告: 无法获取特征名称，特征重要性分析可能使用索引作为特征名称")
+    
+    # 评估模型，并计算特征重要性
+    results = baseline.evaluate(
+        X_test, y_test, 
+        feature_names=feature_names,
+        output_dir=os.path.join(Config.REPORT_OUTPUT_DIR, "feature_importance")
+    )
     
     # 保存模型
     baseline.save_models(Config.MODEL_OUTPUT_DIR)
