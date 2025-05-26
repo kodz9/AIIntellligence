@@ -30,7 +30,8 @@ class DeepLearningModels:
         self.history = None
         
     def build_lstm_attention(self, input_shape, lstm_units=64, attention_heads=4, 
-                            dense_units=32, dropout_rate=0.3, learning_rate=0.001):
+                            dense_units=32, dropout_rate=0.3, learning_rate=0.001,
+                            l2_reg=0.0):
         """
         构建改进的LSTM+Attention模型
         
@@ -41,49 +42,43 @@ class DeepLearningModels:
             dense_units: 全连接层的单元数
             dropout_rate: Dropout比率
             learning_rate: 学习率
-        """
-        # 检查输入维度，确定是时序还是非时序数据
-        if len(input_shape) == 2:  # 时序数据 (time_steps, features)
-            time_steps, features = input_shape
-            
-            # 构建模型
-            inputs = Input(shape=(time_steps, features))
-            
-            # 双向LSTM层
-            lstm_out = Bidirectional(LSTM(lstm_units, return_sequences=True))(inputs)
-            
-            # 多头注意力层
-            attention = MultiHeadAttention(
-                num_heads=attention_heads, key_dim=lstm_units//attention_heads
-            )(lstm_out, lstm_out)
-            
-            # 残差连接
-            attention_with_residual = Add()([lstm_out, attention])
-            
-            # Layer Normalization
-            normalized = LayerNormalization()(attention_with_residual)
-            
-            # 全局平均池化
-            pooled = GlobalAveragePooling1D()(normalized)
-            
-        else:  # 非时序数据 (features,)
-            features = input_shape[0]
-            
-            # 构建模型
-            inputs = Input(shape=(features,))
-            
-            # 全连接层
-            pooled = Dense(dense_units*2, activation='relu')(inputs)
-            pooled = BatchNormalization()(pooled)
-            pooled = Dropout(dropout_rate)(pooled)
+            l2_reg: L2正则化系数
         
-        # 共享的全连接层
-        x = Dense(dense_units, activation='relu')(pooled)
-        x = BatchNormalization()(x)
-        x = Dropout(dropout_rate)(x)
+        返回:
+            model: 编译好的模型
+        """
+        from keras.regularizers import l2
+        
+        # 输入层
+        inputs = Input(shape=input_shape, name='input_layer')
+        
+        # 双向LSTM层
+        lstm_layer = Bidirectional(LSTM(lstm_units, return_sequences=True, 
+                                       kernel_regularizer=l2(l2_reg)))(inputs)
+        
+        # 多头注意力层
+        attention_layer = MultiHeadAttention(
+            num_heads=attention_heads,
+            key_dim=lstm_units,
+            dropout=dropout_rate
+        )(lstm_layer, lstm_layer)
+        
+        # 残差连接
+        residual = Add()([lstm_layer, attention_layer])
+        
+        # 层归一化
+        normalized = LayerNormalization()(residual)
+        
+        # 全局平均池化
+        pooled = GlobalAveragePooling1D()(normalized)
+        
+        # 全连接层
+        dense = Dense(dense_units, activation='relu', kernel_regularizer=l2(l2_reg))(pooled)
+        dense = BatchNormalization()(dense)
+        dense = Dropout(dropout_rate)(dense)
         
         # 输出层
-        outputs = Dense(1, activation='sigmoid')(x)
+        outputs = Dense(1, activation='sigmoid')(dense)
         
         # 创建模型
         model = Model(inputs=inputs, outputs=outputs)
@@ -92,14 +87,12 @@ class DeepLearningModels:
         model.compile(
             optimizer=Adam(learning_rate=learning_rate),
             loss='binary_crossentropy',
-            metrics=['accuracy', tf.keras.metrics.AUC(name='auc'), 
-                    tf.keras.metrics.Precision(name='precision'), 
-                    tf.keras.metrics.Recall(name='recall')]
+            metrics=['accuracy', 'AUC', 'Precision', 'Recall']
         )
         
+        # 保存模型
         self.model = model
-        print("LSTM+Attention模型构建完成:")
-        model.summary()
+        self.history = None
         
         return model
     
@@ -256,7 +249,8 @@ class DeepLearningModels:
         
         return model
     
-    def train(self, X_train, y_train, X_val, y_val, batch_size=32, epochs=50, patience=10, model_path=None):
+    def train(self, X_train, y_train, X_val, y_val, batch_size=32, epochs=50, patience=10, model_path=None,
+             class_weight=None, use_focal_loss=False, use_lr_scheduler=True):
         """
         训练模型
         
@@ -269,6 +263,9 @@ class DeepLearningModels:
             epochs: 训练轮数
             patience: 早停耐心值
             model_path: 模型保存路径
+            class_weight: 类别权重字典，用于处理类别不平衡
+            use_focal_loss: 是否使用Focal Loss
+            use_lr_scheduler: 是否使用学习率调度器
         
         返回:
             history: 训练历史
@@ -285,6 +282,41 @@ class DeepLearningModels:
             model_dir = os.path.dirname(model_path)
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
+        
+        # 如果使用Focal Loss，重新编译模型
+        if use_focal_loss:
+            # 使用TensorFlow的实现方式
+            def focal_loss(gamma=2., alpha=.25):
+                def focal_loss_fixed(y_true, y_pred):
+                    # 将标签和预测转换为适当的格式
+                    y_true = tf.cast(y_true, tf.float32)
+                    
+                    # 计算二元交叉熵
+                    epsilon = 1e-7
+                    y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+                    
+                    # 计算pt
+                    pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+                    pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+                    
+                    # 应用Focal Loss公式
+                    loss_1 = -alpha * tf.pow(1. - pt_1, gamma) * tf.math.log(pt_1)
+                    loss_0 = -(1 - alpha) * tf.pow(pt_0, gamma) * tf.math.log(1. - pt_0)
+                    
+                    # 合并损失
+                    loss = tf.reduce_mean(loss_1 + loss_0)
+                    return loss
+                
+                return focal_loss_fixed
+            
+            # 重新编译模型
+            self.model.compile(
+                optimizer=self.model.optimizer,
+                loss=focal_loss(),
+                metrics=['accuracy', tf.keras.metrics.AUC(name='auc'), 
+                        tf.keras.metrics.Precision(name='precision'), 
+                        tf.keras.metrics.Recall(name='recall')]
+            )
         
         # 定义回调函数
         callbacks = []
@@ -311,14 +343,15 @@ class DeepLearningModels:
             callbacks.append(checkpoint)
         
         # 学习率调度器
-        lr_scheduler = ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=0.5,
-            patience=5,
-            min_lr=1e-6,
-            verbose=1
-        )
-        callbacks.append(lr_scheduler)
+        if use_lr_scheduler:
+            lr_scheduler = ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=5,
+                min_lr=1e-6,
+                verbose=1
+            )
+            callbacks.append(lr_scheduler)
         
         # 训练模型
         print("开始训练模型...")
@@ -328,6 +361,7 @@ class DeepLearningModels:
             batch_size=batch_size,
             epochs=epochs,
             callbacks=callbacks,
+            class_weight=class_weight,
             verbose=1
         )
         
