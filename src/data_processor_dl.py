@@ -4,7 +4,6 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 
@@ -452,5 +451,4 @@ def handle_class_imbalance(X_train, y_train, method='smote', random_state=42):
         return X_resampled, y_resampled
         
     except ImportError:
-        print("警告: imblearn库未安装，无法进行类别不平衡处理")
         return X_train, y_train

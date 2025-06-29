@@ -2,6 +2,8 @@
 Model Evaluation Module: For evaluating the performance of AKI prediction models, generating evaluation metrics and visualizations
 """
 
+# 用于机器学习模型的评估
+
 import os
 import numpy as np
 import pandas as pd
@@ -16,6 +18,7 @@ from sklearn.metrics import (
 class ModelEvaluator:
     """Model Evaluation Class"""
     
+    # 在__init__方法中添加类型注解
     def __init__(self, y_true, y_pred_proba, threshold=0.5):
         """
         Initialize the evaluator
@@ -25,10 +28,10 @@ class ModelEvaluator:
             y_pred_proba: Predicted probabilities
             threshold: Classification threshold
         """
-        self.y_true = y_true
-        self.y_pred_proba = y_pred_proba
+        self.y_true = np.array(y_true)
+        self.y_pred_proba = np.array(y_pred_proba)  # 确保是numpy数组
         self.threshold = threshold
-        self.y_pred = (y_pred_proba >= threshold).astype(int)
+        self.y_pred = (self.y_pred_proba >= threshold).astype(int)
         
         # Calculate evaluation metrics
         self.auroc = roc_auc_score(y_true, y_pred_proba)
@@ -194,7 +197,7 @@ class ModelEvaluator:
         
         # Find optimal F1 threshold
         optimal_idx = np.argmax(f1_scores)
-        optimal_threshold = thresholds[optimal_idx]
+        optimal_threshold = thresholds[optimal_idx].item()
         plt.axvline(optimal_threshold, color='red', linestyle='--',
                    label=f'Optimal Threshold = {optimal_threshold:.2f}')
         
@@ -521,4 +524,4 @@ if __name__ == "__main__":
     evaluator.plot_confusion_matrix()
     
     # Compare models
-    evaluator.compare_models([rf_proba], ['RandomForest']) 
+    evaluator.compare_models([rf_proba], ['RandomForest'])

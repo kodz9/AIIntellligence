@@ -3,21 +3,20 @@
 """
 
 import os
-import numpy as np
+
 import matplotlib.pyplot as plt
 import tensorflow as tf
-
-# 直接从Keras导入所需模块
 import keras
-from keras.models import Model, Sequential
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from keras.layers import (
-    Dense, LSTM, GRU, Bidirectional, Input, Dropout, 
-    Concatenate, Add, LayerNormalization, GlobalAveragePooling1D,
+    Dense, LSTM, Bidirectional, Input, Dropout,
+    Add, LayerNormalization, GlobalAveragePooling1D,
     Conv1D, MaxPooling1D, BatchNormalization
 )
 # 单独导入MultiHeadAttention
 from keras.layers import MultiHeadAttention
-from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+# 直接从Keras导入所需模块
+from keras.models import Model, Sequential
 from keras.optimizers import Adam
 
 
@@ -170,9 +169,9 @@ class DeepLearningModels:
         model.compile(
             optimizer=Adam(learning_rate=learning_rate),
             loss='binary_crossentropy',
-            metrics=['accuracy', tf.keras.metrics.AUC(name='auc'), 
-                    tf.keras.metrics.Precision(name='precision'), 
-                    tf.keras.metrics.Recall(name='recall')]
+            metrics=['accuracy', keras.metrics.AUC(name='auc'),
+                    keras.metrics.Precision(name='precision'),
+                    keras.metrics.Recall(name='recall')]
         )
         
         self.model = model
@@ -238,9 +237,9 @@ class DeepLearningModels:
         model.compile(
             optimizer=Adam(learning_rate=learning_rate),
             loss='binary_crossentropy',
-            metrics=['accuracy', tf.keras.metrics.AUC(name='auc'), 
-                    tf.keras.metrics.Precision(name='precision'), 
-                    tf.keras.metrics.Recall(name='recall')]
+            metrics=['accuracy', keras.metrics.AUC(name='auc'),
+                    keras.metrics.Precision(name='precision'),
+                    keras.metrics.Recall(name='recall')]
         )
         
         self.model = model
@@ -313,9 +312,9 @@ class DeepLearningModels:
             self.model.compile(
                 optimizer=self.model.optimizer,
                 loss=focal_loss(),
-                metrics=['accuracy', tf.keras.metrics.AUC(name='auc'), 
-                        tf.keras.metrics.Precision(name='precision'), 
-                        tf.keras.metrics.Recall(name='recall')]
+                metrics=['accuracy', keras.metrics.AUC(name='auc'),
+                        keras.metrics.Precision(name='precision'),
+                        keras.metrics.Recall(name='recall')]
             )
         
         # 定义回调函数
@@ -495,5 +494,5 @@ class DeepLearningModels:
             print(f"错误: 模型文件 {model_path} 不存在")
             return
         
-        self.model = tf.keras.models.load_model(model_path)
+        self.model = keras.models.load_model(model_path)
         print(f"模型已从 {model_path} 加载")

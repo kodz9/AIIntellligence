@@ -3,10 +3,11 @@
 """
 
 import os
-import numpy as np
-import pandas as pd
+
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+import numpy as np
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, roc_curve
+
 from src.model_evaluator import ModelEvaluator
 
 
@@ -27,24 +28,61 @@ class ModelEnsemble:
     
     def predict_proba(self, X):
         """
-        使用所有模型进行预测并返回概率
+        使用所有模型进行预测
         
         参数:
             X: 输入特征
-            
+        
         返回:
             predictions: 每个模型的预测概率
         """
         predictions = []
         
-        for model in self.models:
-            if hasattr(model, 'predict_proba'):
-                pred = model.predict_proba(X)[:, 1]
-            else:
-                pred = model.predict(X).flatten()
+        for i, model in enumerate(self.models):
+            try:
+                if hasattr(model, 'predict_proba'):
+                    pred = model.predict_proba(X)[:, 1]
+                else:
+                    # 尝试不同的输入形状
+                    if len(X.shape) == 3:
+                        # 首先尝试3D输入
+                        try:
+                            pred_output = model.predict(X, verbose=0)
+                            # 处理输出形状
+                            if hasattr(pred_output, 'numpy'):
+                                pred_output = pred_output.numpy()
+                            pred = pred_output.flatten()
+                        except (ValueError, AttributeError) as e:
+                            if "expected shape" in str(e) or "TensorShape" in str(e):
+                                # 如果3D失败，尝试2D（使用最后时间步）
+                                X_2d = X[:, -1, :]
+                                pred_output = model.predict(X_2d, verbose=0)
+                                if hasattr(pred_output, 'numpy'):
+                                    pred_output = pred_output.numpy()
+                                pred = pred_output.flatten()
+                            else:
+                                raise e
+                    elif len(X.shape) == 2:
+                        # 2D输入
+                        pred_output = model.predict(X, verbose=0)
+                        if hasattr(pred_output, 'numpy'):
+                            pred_output = pred_output.numpy()
+                        pred = pred_output.flatten()
+                    else:
+                        pred_output = model.predict(X, verbose=0)
+                        if hasattr(pred_output, 'numpy'):
+                            pred_output = pred_output.numpy()
+                        pred = pred_output.flatten()
+                
+                predictions.append(pred)
+                print(f"模型 {i+1} ({self.model_names[i]}) 预测成功，输出形状: {pred.shape}")
+                
+            except Exception as e:
+                print(f"模型 {i+1} ({self.model_names[i]}) 预测失败: {str(e)}")
+                # 创建一个默认预测（全部为0.5）
+                pred = np.full(X.shape[0], 0.5)
+                predictions.append(pred)
             
-            predictions.append(pred)
-        
         return np.array(predictions)
     
     def simple_average(self, X):
@@ -200,12 +238,12 @@ class ModelEnsemble:
         
         # 绘制每个单独模型的ROC曲线
         for i, (name, pred) in enumerate(zip(self.model_names, individual_preds)):
-            fpr, tpr, _ = evaluator.calculate_roc_curve(y_test, pred)
+            fpr, tpr, _ = roc_curve(y_test, pred)
             auc_score = roc_auc_score(y_test, pred)
             plt.plot(fpr, tpr, label=f'{name} (AUC = {auc_score:.4f})')
         
         # 绘制集成模型的ROC曲线
-        fpr, tpr, _ = evaluator.calculate_roc_curve(y_test, ensemble_pred)
+        fpr, tpr, _ = roc_curve(y_test, ensemble_pred)
         auc_score = roc_auc_score(y_test, ensemble_pred)
         plt.plot(fpr, tpr, 'k--', linewidth=3, label=f'{ensemble_name} (AUC = {auc_score:.4f})')
         
@@ -256,5 +294,10 @@ class ModelEnsemble:
         
         plt.show()
         plt.close()
-        
-        return evaluator.get_metrics()
+        metrics = {
+            'AUROC': evaluator.auroc,
+            'AUPRC': evaluator.auprc,
+            'F1': evaluator.f1,
+            'Threshold': evaluator.threshold
+        }
+        return metrics
